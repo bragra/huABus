@@ -44,6 +44,14 @@ configuration:
     name: MQTT Topic Prefix
     description: Base topic under which sensor data is published (e.g. huawei-solar)
 
+  # === Inverter Control ===
+  enable_inverter_writes:
+    name: Enable Inverter Writes
+    description: |
+      Enables only the persistent PV output power limit number entity.
+      Disabled by default because not all inverters and Modbus connections support writes.
+      The inverter rejects this write during night standby. Restart the add-on after changing this option.
+
   # === Advanced Settings ===
   log_level:
     name: Log Level

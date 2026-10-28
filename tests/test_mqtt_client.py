@@ -2,23 +2,31 @@
 
 """Tests für MQTT Client Manager."""
 
+import asyncio
 import json
 import logging
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from bridge.mqtt_client import (
+    POWER_LIMIT_DISCOVERY_TOPIC,
     _build_sensor_config,
     _get_mqtt_client,
     _load_numeric_sensors,
     _load_text_sensors,
     _on_connect,
     _on_disconnect,
+    _on_message,
+    clear_power_limit_commands,
     connect_mqtt,
     disconnect_mqtt,
     publish_data,
     publish_discovery_configs,
+    publish_power_limit_discovery,
     publish_status,
+    remove_power_limit_discovery,
+    subscribe_power_limit_commands,
 )
 
 # ---------------------------------------------------------------------------
@@ -34,6 +42,7 @@ def mock_mqtt_client():
         publish_result = MagicMock()
         publish_result.wait_for_publish = MagicMock()
         client_instance.publish.return_value = publish_result
+        client_instance.subscribe.return_value = (0, 1)
         yield client_instance
 
 
@@ -53,10 +62,12 @@ def reset_mqtt_globals():
     mqtt_module._mqtt_client = None
     mqtt_module._is_connected = False
     mqtt_module._connected_event.clear()
+    clear_power_limit_commands()
     yield
     mqtt_module._mqtt_client = None
     mqtt_module._is_connected = False
     mqtt_module._connected_event.clear()
+    clear_power_limit_commands()
 
 
 # ---------------------------------------------------------------------------
@@ -377,3 +388,100 @@ class TestSensorLoaders:
 
     def test_load_text_sensors_returns_list(self):
         assert isinstance(_load_text_sensors(), list)
+
+
+# ---------------------------------------------------------------------------
+# TestPowerLimitControl
+# ---------------------------------------------------------------------------
+
+
+class TestPowerLimitControl:
+    """Opt-in power limit discovery and MQTT command handling."""
+
+    @pytest.mark.asyncio
+    async def test_power_limit_discovery_contains_number_config(self, mock_mqtt_client):
+        import bridge.mqtt_client as mqtt_module
+
+        mqtt_module._mqtt_client = mock_mqtt_client
+        mqtt_module._is_connected = True
+
+        await publish_power_limit_discovery("test/topic", 10000)
+
+        topic, payload = mock_mqtt_client.publish.call_args.args[:2]
+        config = json.loads(payload)
+        assert topic == POWER_LIMIT_DISCOVERY_TOPIC
+        assert config["command_topic"] == "test/topic/pmax/set"
+        assert config["state_topic"] == "test/topic"
+        assert config["value_template"] == "{{ value_json.power_output_limit }}"
+        assert config["min"] == 0
+        assert config["max"] == 10000
+        assert config["step"] == 1
+        assert config["mode"] == "box"
+        assert config["optimistic"] is False
+
+    @pytest.mark.asyncio
+    async def test_disabled_writes_remove_retained_discovery(self, mock_mqtt_client):
+        import bridge.mqtt_client as mqtt_module
+
+        mqtt_module._mqtt_client = mock_mqtt_client
+        mqtt_module._is_connected = True
+
+        await remove_power_limit_discovery()
+
+        mock_mqtt_client.publish.assert_called_once_with(
+            POWER_LIMIT_DISCOVERY_TOPIC,
+            "",
+            qos=1,
+            retain=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_command_is_forwarded_to_async_handler(self, mock_mqtt_client):
+        import bridge.mqtt_client as mqtt_module
+
+        mqtt_module._mqtt_client = mock_mqtt_client
+        received = asyncio.Event()
+        payloads = []
+
+        async def handler(payload):
+            payloads.append(payload)
+            received.set()
+
+        subscribe_power_limit_commands("test/topic", handler)
+        mock_mqtt_client.subscribe.assert_called_once_with("test/topic/pmax/set", qos=1)
+
+        _on_message(
+            mock_mqtt_client,
+            None,
+            SimpleNamespace(topic="test/topic/pmax/set", payload=b"2000", retain=False),
+        )
+        await asyncio.wait_for(received.wait(), timeout=1)
+        assert payloads == [b"2000"]
+
+    @pytest.mark.asyncio
+    async def test_retained_command_is_ignored(self, mock_mqtt_client):
+        import bridge.mqtt_client as mqtt_module
+
+        mqtt_module._mqtt_client = mock_mqtt_client
+        handler = AsyncMock()
+        subscribe_power_limit_commands("test/topic", handler)
+
+        _on_message(
+            mock_mqtt_client,
+            None,
+            SimpleNamespace(topic="test/topic/pmax/set", payload=b"2000", retain=True),
+        )
+        await asyncio.sleep(0)
+        handler.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_power_limit_subscription_is_restored_on_reconnect(self, mock_mqtt_client):
+        import bridge.mqtt_client as mqtt_module
+
+        mqtt_module._mqtt_client = mock_mqtt_client
+        subscribe_power_limit_commands("test/topic", AsyncMock())
+        mock_mqtt_client.subscribe.reset_mock()
+
+        _on_connect(mock_mqtt_client, None, None, 0)
+
+        mock_mqtt_client.subscribe.assert_called_once_with("test/topic/pmax/set", qos=1)

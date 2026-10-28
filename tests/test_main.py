@@ -18,6 +18,7 @@ from bridge.main import (
     determine_slave_id,
     heartbeat,
     init_logging,
+    initialize_bridge,
     is_modbus_exception,
     log_cycle_summary,
     main,
@@ -25,6 +26,7 @@ from bridge.main import (
     read_registers,
     reset_state,
     run_main_cycle,
+    setup_inverter_control,
     setup_modbus,
 )
 from huawei_solar.exceptions import ReadException
@@ -867,3 +869,57 @@ class TestLogCycleSummaryDebugBranch:
         new_tracker = main_module.get_error_tracker()
         assert new_tracker is not old_tracker
         assert new_tracker is main_module._error_tracker
+
+
+class TestInverterControlSetup:
+    """Opt-in control initialization and cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_setup_control_publishes_discovery_and_subscribes(self, mock_config, mock_client):
+        with (
+            patch("bridge.main.get_pmax", new_callable=AsyncMock, return_value=10000),
+            patch("bridge.main.publish_power_limit_discovery", new_callable=AsyncMock) as mock_publish,
+            patch("bridge.main.subscribe_power_limit_commands") as mock_subscribe,
+        ):
+            await setup_inverter_control(mock_client, mock_config)
+
+        mock_publish.assert_awaited_once_with(mock_config.mqtt_topic, 10000)
+        assert mock_subscribe.call_args.args[0] == mock_config.mqtt_topic
+        assert callable(mock_subscribe.call_args.args[1])
+
+    @pytest.mark.asyncio
+    async def test_setup_control_failure_removes_discovery(self, mock_config, mock_client):
+        with (
+            patch("bridge.main.get_pmax", new_callable=AsyncMock, side_effect=ReadException("failed")),
+            patch("bridge.main.publish_power_limit_discovery", new_callable=AsyncMock) as mock_publish,
+            patch("bridge.main.remove_power_limit_discovery", new_callable=AsyncMock) as mock_remove,
+            patch("bridge.main.subscribe_power_limit_commands") as mock_subscribe,
+        ):
+            await setup_inverter_control(mock_client, mock_config)
+
+        mock_publish.assert_not_awaited()
+        mock_subscribe.assert_not_called()
+        mock_remove.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("writes_enabled", [False, True])
+    async def test_initialize_bridge_honors_write_toggle(self, mock_config, mock_client, writes_enabled):
+        mock_config.enable_inverter_writes = writes_enabled
+        with (
+            patch("bridge.main.determine_slave_id", new_callable=AsyncMock, return_value=1),
+            patch("bridge.main.setup_mqtt", new_callable=AsyncMock, return_value=True),
+            patch("bridge.main.publish_status", new_callable=AsyncMock),
+            patch("bridge.main.publish_discovery_configs", new_callable=AsyncMock),
+            patch("bridge.main.remove_power_limit_discovery", new_callable=AsyncMock) as mock_remove,
+            patch("bridge.main.setup_modbus", new_callable=AsyncMock, return_value=mock_client),
+            patch("bridge.main.setup_inverter_control", new_callable=AsyncMock) as mock_setup,
+        ):
+            assert await initialize_bridge(mock_config) is mock_client
+
+        if writes_enabled:
+            mock_remove.assert_not_awaited()
+            mock_setup.assert_awaited_once_with(mock_client, mock_config)
+        else:
+            mock_remove.assert_awaited_once()
+            mock_setup.assert_not_awaited()
+            mock_client.set.assert_not_awaited()

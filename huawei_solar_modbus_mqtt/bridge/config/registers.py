@@ -100,6 +100,7 @@ ESSENTIAL_REGISTERS = [
     "model_name",
     "serial_number",
     "rated_power",  # W
+    "active_power_fixed_value_derating",  # Persistent output power cap (W)
     "startup_time",  # Timestamp
     #
     # Alarm & Diagnostik

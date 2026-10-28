@@ -26,6 +26,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 from huawei_solar import AsyncHuaweiSolarClient, RegisterName, create_tcp_client
@@ -35,13 +36,17 @@ from .batch_builder import BatchBuilder
 from .config.registers import ESSENTIAL_REGISTERS
 from .config_manager import ConfigManager, ConfigurationError
 from .error_tracker import ConnectionErrorTracker, ErrorType
+from .inverter_control import CONTROL_EXCEPTIONS, get_pmax, handle_power_limit_command
 from .logging_utils import get_logger
 from .mqtt_client import (
     connect_mqtt,
     disconnect_mqtt,
     publish_data,
     publish_discovery_configs,
+    publish_power_limit_discovery,
     publish_status,
+    remove_power_limit_discovery,
+    subscribe_power_limit_commands,
 )
 from .slave_detector import KNOWN_SLAVE_IDS, detect_slave_id
 from .total_increasing_filter import get_filter, reset_filter
@@ -697,6 +702,20 @@ async def setup_modbus(slave_id: int, config: ConfigManager) -> AsyncHuaweiSolar
         return None
 
 
+async def setup_inverter_control(client: AsyncHuaweiSolarClient, config: ConfigManager) -> None:
+    """Enable the PV output cap control on the polling client's serialized transport."""
+    try:
+        pmax = await get_pmax(client)
+        await publish_power_limit_discovery(config.mqtt_topic, pmax)
+        subscribe_power_limit_commands(
+            config.mqtt_topic,
+            partial(handle_power_limit_command, client),
+        )
+    except CONTROL_EXCEPTIONS + (RuntimeError,) as e:
+        logger.error("❌ Inverter power limit control unavailable: %s", e)
+        await remove_power_limit_discovery()
+
+
 async def initialize_bridge(config: ConfigManager) -> AsyncHuaweiSolarClient | None:
     """Initialize MQTT, discovery, and Modbus connection.
 
@@ -719,6 +738,8 @@ async def initialize_bridge(config: ConfigManager) -> AsyncHuaweiSolarClient | N
 
     try:
         await publish_discovery_configs(config.mqtt_topic)
+        if not config.enable_inverter_writes:
+            await remove_power_limit_discovery()
         logger.info("📢 Discovery published")
     except Exception as e:
         logger.error("❌ Discovery failed: %s", e)
@@ -727,6 +748,9 @@ async def initialize_bridge(config: ConfigManager) -> AsyncHuaweiSolarClient | N
     if client is None:
         await disconnect_mqtt()
         return None
+
+    if config.enable_inverter_writes:
+        await setup_inverter_control(client, config)
 
     get_filter()
     logger.info("🛡️ Total Increasing Filter initialized")

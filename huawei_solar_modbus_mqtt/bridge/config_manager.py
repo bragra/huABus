@@ -87,6 +87,8 @@ class ConfigManager:
             # Batch settings (v1.10.0+)
             "enable_batching": self._parse_bool_env("HUAWEI_ENABLE_BATCHING", default=True),
             "batch_max_gap": self._parse_int_env("HUAWEI_BATCH_MAX_GAP", default=50),
+            # Inverter control settings
+            "enable_inverter_writes": self._parse_bool_env("HUAWEI_ENABLE_INVERTER_WRITES", default=False),
         }
 
     @staticmethod
@@ -213,6 +215,11 @@ class ConfigManager:
         Helps group related registers together.
         """
         return cast(int, self._config.get("batch_max_gap", 50))
+
+    @property
+    def enable_inverter_writes(self) -> bool:
+        """Enable the opt-in PV output power limit control."""
+        return cast(bool, self._config.get("enable_inverter_writes", False))
 
     # === Validation ===
 

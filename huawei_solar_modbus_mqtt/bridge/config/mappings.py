@@ -89,6 +89,7 @@ REGISTER_MAPPING: dict[str, str] = {
     "model_name": "model_name",
     "serial_number": "serial_number",
     "rated_power": "rated_power",
+    "active_power_fixed_value_derating": "power_output_limit",
     #
     # Alarms & diagnostics
     "alarm_1": "alarm1",

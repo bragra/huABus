@@ -87,6 +87,7 @@ INFO - 📊 Published - PV: 4500W | AC Out: 4200W | ...
   - Inverter status and efficiency
 - **Configurable logging** with TRACE, DEBUG, INFO, WARNING, ERROR levels
 - **Performance monitoring** with automatic warnings
+- **Optional PV output power limit** via an opt-in Home Assistant number entity
 
 ## Configuration Options
 
@@ -117,11 +118,13 @@ INFO - 📊 Published - PV: 4500W | AC Out: 4200W | ...
 - **status_timeout** (default: `180s`, range: 30-600): Offline timeout
 - **poll_interval** (default: `30s`, range: 10-300): Modbus query interval  
   Recommended: **30-60s** for optimal stability
+- **enable_inverter_writes** (default: `false`): Exposes only the persistent PV output power limit control. Enable only if your inverter and Modbus connection support register writes. The cap uses register 40126, applies immediately, and survives inverter reboots. Writes are rejected during night standby; setting the value to `P_MAX` removes the cap. Restart the add-on after changing this option.
 
 ## MQTT Topics
 
 - **Sensor Data:** `huawei-solar` (JSON with all sensor data + timestamp)
 - **Status:** `huawei-solar/status` (online/offline for availability)
+- **Power Limit Command:** `huawei-solar/pmax/set` (integer watts; subscribed only when writes are enabled)
 
 ## Home Assistant Entities
 
@@ -160,6 +163,10 @@ Find entities at: **Settings → Devices & Services → MQTT → "Huawei Solar I
 
 - `binary_sensor.huawei_solar_status` (online/offline)
 - `sensor.inverter_status`, `sensor.battery_status`
+
+**Optional control (requires `enable_inverter_writes: true`):**
+
+- `number.pv_output_power_limit` (persistent output cap, 0 W to `P_MAX`)
 
 ### Diagnostic Entities (disabled by default)
 

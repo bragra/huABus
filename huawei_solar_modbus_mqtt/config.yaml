@@ -37,6 +37,7 @@ options:
   poll_interval: 30
   enable_batching: true
   batch_max_gap: 50
+  enable_inverter_writes: false
 schema:
   modbus_host: str
   modbus_port: port
@@ -52,3 +53,4 @@ schema:
   poll_interval: int(10,300)
   enable_batching: bool
   batch_max_gap: int(1,10000)?
+  enable_inverter_writes: bool

@@ -64,6 +64,7 @@ class TestConfigManagerLoading:
         assert config.poll_interval == 20
         assert config.enable_batching is True
         assert config.batch_max_gap == 50
+        assert config.enable_inverter_writes is False
 
     def test_load_from_env_when_no_file(self, monkeypatch, tmp_path):
         """Loads all values from environment variables when no file exists."""
@@ -81,6 +82,7 @@ class TestConfigManagerLoading:
         monkeypatch.setenv("HUAWEI_POLL_INTERVAL", "60")
         monkeypatch.setenv("HUAWEI_ENABLE_BATCHING", "true")
         monkeypatch.setenv("HUAWEI_BATCH_MAX_GAP", "75")
+        monkeypatch.setenv("HUAWEI_ENABLE_INVERTER_WRITES", "true")
 
         config = ConfigManager(config_path=tmp_path / "nonexistent.json")
 
@@ -98,6 +100,7 @@ class TestConfigManagerLoading:
         assert config.poll_interval == 60
         assert config.enable_batching is True
         assert config.batch_max_gap == 75
+        assert config.enable_inverter_writes is True
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +152,7 @@ class TestConfigManagerProperties:
         assert config.poll_interval == 45
         assert config.enable_batching is True
         assert config.batch_max_gap == 100
+        assert config.enable_inverter_writes is False
 
     def test_empty_credentials_return_none(self, tmp_path):
         """Empty username and password strings are normalized to None."""

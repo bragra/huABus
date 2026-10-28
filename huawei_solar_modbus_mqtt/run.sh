@@ -113,6 +113,9 @@ export HUAWEI_ENABLE_BATCHING
 HUAWEI_BATCH_MAX_GAP=$(get_required_config 'batch_max_gap' '50')
 export HUAWEI_BATCH_MAX_GAP
 
+HUAWEI_ENABLE_INVERTER_WRITES=$(get_required_config 'enable_inverter_writes' 'false')
+export HUAWEI_ENABLE_INVERTER_WRITES
+
 echo "$(date +"%Y-%m-%dT%H:%M:%S") INFO: >> Log level: ${HUAWEI_LOG_LEVEL}"
 
 # Set bashio log level to match
@@ -168,6 +171,7 @@ echo "$(date +"%Y-%m-%dT%H:%M:%S") INFO:  📍 Topic: ${HUAWEI_MQTT_TOPIC}"
 echo "$(date +"%Y-%m-%dT%H:%M:%S") INFO:  ⏱️ Poll: ${HUAWEI_POLL_INTERVAL}s | Timeout: ${HUAWEI_STATUS_TIMEOUT}s"
 
 echo "$(date +"%Y-%m-%dT%H:%M:%S") INFO:  📦 Batching: ${HUAWEI_ENABLE_BATCHING} | Max Gap: ${HUAWEI_BATCH_MAX_GAP} units"
+echo "$(date +"%Y-%m-%dT%H:%M:%S") INFO:  ✍️ Inverter writes: ${HUAWEI_ENABLE_INVERTER_WRITES}"
 
 echo "[$(date +'%T')] INFO: ----------------------------------------------------------"
 

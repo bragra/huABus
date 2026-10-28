@@ -17,7 +17,8 @@
 [![armv7](https://img.shields.io/badge/armv7-yes-green.svg)](https://github.com/arboeh/huABus)
 [![i386](https://img.shields.io/badge/i386-yes-green.svg)](https://github.com/arboeh/huABus)
 
-**66 Essential Registers * 67 Entities * Optional MQTT Heartbeat * 30s Polling**  
+**67 Essential Registers * 67 Sensor Entities * Optional PV Power Control * 30s Polling**
+
 **Changelog:** [CHANGELOG.md](huawei_solar_modbus_mqtt/CHANGELOG.md)
 
 > **⚠️ IMPORTANT: Single Modbus Connection Limit**
@@ -30,7 +31,8 @@
 ## Features
 
 - **Automatic Slave ID Detection:** Tries common values (1, 2, 100) automatically
-- **Modbus TCP → MQTT:** 67 entities with Auto-Discovery
+- **Modbus TCP → MQTT:** 67 sensor entities with Auto-Discovery
+- **Optional Inverter Control:** Opt-in persistent PV output power limit from Home Assistant
 - **Complete Monitoring:** Battery, PV (1-4), Grid (3-phase), Energy counters
 - **Total Increasing Filter:** Prevents false counter resets in energy statistics
 - **Auto MQTT Configuration:** Automatically uses Home Assistant MQTT credentials
@@ -56,7 +58,7 @@
 
 ## Batch Reading Mode (v1.10.1+)
 
-Reads all 66 registers in 3-5 batches instead of individually. **Performance improvement:** up to 75% faster on high-latency networks. Automatic fallback to sequential mode if batching fails.
+Reads all 67 registers in 3-5 batches instead of individually. **Performance improvement:** up to 75% faster on high-latency networks. Automatic fallback to sequential mode if batching fails.
 
 **Configuration:**
 ```yaml
@@ -65,10 +67,26 @@ batch_max_gap: 50             # Max address gap per batch (recommended: 30-50)
 ```
 
 **Details:**
-- `enable_batching: true` - Groups registers by Modbus address proximity, reducing 66 individual reads to typically 3-5 batch requests.
+- `enable_batching: true` - Groups registers by Modbus address proximity, reducing 67 individual reads to typically 3-5 batch requests.
 - `batch_max_gap: 50` - Maximum address gap (in Modbus units) within a batch. Smaller values create more batches with less risk of exceeding the inverter's internal limit (~125 registers per batch). Larger values reduce batch count but increase the risk of batch failures.
 - **Recommended:** `30-50` for most installations. Only increase to `100` if you have a stable, high-performance network.
 - Disable (`enable_batching: false`) if you experience repeated batch failures.
+
+## Optional PV Output Power Limit
+
+Writing is **disabled by default** because not all inverters and Modbus connections support register writes. To enable only the persistent PV output power limit control:
+
+```yaml
+enable_inverter_writes: true
+```
+
+After restarting the add-on, Home Assistant discovers **PV Output Power Limit** (`number.pv_output_power_limit`). Enter a value from 0 W up to the inverter's `P_MAX`. Setting it back to `P_MAX` removes the cap.
+
+- Uses the existing Modbus connection and register 40126 (`active_power_fixed_value_derating`).
+- Applies immediately and survives inverter reboots.
+- The inverter rejects cap writes during night standby; retry when it is on-grid.
+- The displayed value is read back from the inverter and refreshed during polling, not optimistically assumed from the command.
+- Disable `enable_inverter_writes` and restart to remove the control and all command subscriptions.
 
 ## EVCC Integration (No Modbus Proxy!)
 
@@ -145,6 +163,7 @@ Both share the same limitation - only **ONE Modbus connection**. To use both sim
 - **Log Level:** `TRACE` | `DEBUG` | `INFO` (recommended) | `WARNING` | `ERROR`
 - **Status Timeout:** Default: `180s`
 - **Poll Interval:** Default: `30s` (recommended: 30-60s)
+- **Enable Inverter Writes:** Default: `false`; enables only the PV output power limit control
 
 ## Troubleshooting
 

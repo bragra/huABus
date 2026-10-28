@@ -44,6 +44,14 @@ configuration:
     name: MQTT Topic Präfix
     description: Basis-Topic unter dem die Sensordaten veröffentlicht werden (z.B. huawei-solar)
 
+  # === Inverter-Steuerung ===
+  enable_inverter_writes:
+    name: Inverter-Schreibzugriff aktivieren
+    description: |
+      Aktiviert ausschließlich die Zahlen-Entität für die persistente PV-Ausgangsleistungsbegrenzung.
+      Standardmäßig deaktiviert, da nicht alle Wechselrichter und Modbus-Verbindungen Schreibzugriffe unterstützen.
+      Der Wechselrichter lehnt diesen Schreibzugriff im nächtlichen Standby ab. Starte das Add-on nach einer Änderung neu.
+
   # === Erweiterte Einstellungen ===
   log_level:
     name: Log-Level

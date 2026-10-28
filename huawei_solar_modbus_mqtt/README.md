@@ -28,7 +28,8 @@ with automatic Home Assistant discovery.
 ## Features
 
 - **Batch Reading Mode** — reduces cycle time by up to 75% on high-latency networks
-- **66 Essential Registers** for complete inverter monitoring
+- **67 Essential Registers** for complete inverter monitoring
+- **Optional PV Output Power Limit** — opt-in persistent control from Home Assistant
 - **Automatic Slave ID Detection** — tries common values (1, 2, 100) automatically
 - **Total Increasing Filter** — prevents false counter resets, active from first cycle
 - **Intelligent error tracking** with downtime aggregation and recovery logging

@@ -101,6 +101,7 @@ teardown() {
     unset HUAWEI_STATUS_TIMEOUT
     unset HUAWEI_POLL_INTERVAL
     unset HUAWEI_LOG_LEVEL
+    unset HUAWEI_ENABLE_INVERTER_WRITES
 }
 
 @test "get_required_config returns value when config exists" {
@@ -224,6 +225,7 @@ teardown() {
     [ "$HUAWEI_STATUS_TIMEOUT" = "180" ]
     [ "$HUAWEI_POLL_INTERVAL" = "30" ]
     [ "$HUAWEI_LOG_LEVEL" = "INFO" ]
+    [ "$HUAWEI_ENABLE_INVERTER_WRITES" = "false" ]
 }
 
 @test "Slave ID auto detect enabled" {
@@ -322,7 +324,7 @@ teardown() {
         case "$1" in
         modbus_host | modbus_port | modbus_auto_detect_slave_id | slave_id \
         | mqtt_topic | log_level | status_timeout | poll_interval \
-        | enable_batching | batch_max_gap) return 0 ;;
+        | enable_batching | batch_max_gap | enable_inverter_writes) return 0 ;;
         *) return 1 ;;
         esac
     }
@@ -338,6 +340,7 @@ teardown() {
         poll_interval)   echo '30' ;;
         enable_batching) echo 'true' ;;
         batch_max_gap)   echo '50' ;;
+        enable_inverter_writes) echo 'true' ;;
         *) echo '' ;;
         esac
     }
@@ -356,6 +359,7 @@ teardown() {
     [ "$HUAWEI_LOG_LEVEL"                 = "INFO" ]
     [ "$HUAWEI_ENABLE_BATCHING"           = "true" ]
     [ "$HUAWEI_BATCH_MAX_GAP"             = "50" ]
+    [ "$HUAWEI_ENABLE_INVERTER_WRITES"    = "true" ]
 }
 
 

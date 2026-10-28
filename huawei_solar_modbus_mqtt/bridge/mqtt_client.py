@@ -9,6 +9,7 @@ Verwaltet die persistente MQTT-Verbindung zum Broker und implementiert:
 - Status Publishing (online/offline für Binary Sensor)
 - Last Will Testament (LWT) für automatisches offline bei Verbindungsabbruch
 - Connection State Tracking zur Vermeidung von "not connected" Errors
+- Optionale Befehle für die persistente PV-Ausgangsleistungsbegrenzung
 
 Die Verbindung wird einmalig beim Start erstellt und bleibt für die gesamte
 Laufzeit bestehen (persistent), nur Modbus reconnected bei Fehlern.
@@ -20,6 +21,8 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable, Coroutine
+from concurrent.futures import Future
 from typing import Any
 
 import paho.mqtt.client as mqtt
@@ -38,6 +41,72 @@ _is_connected = False
 # Thread-safe event for connection establishment (paho callbacks run in their own thread)
 _connected_event = threading.Event()
 
+PowerLimitCommandHandler = Callable[[bytes], Coroutine[Any, Any, object]]
+_power_limit_handler: PowerLimitCommandHandler | None = None
+_power_limit_command_topic: str | None = None
+_power_limit_event_loop: asyncio.AbstractEventLoop | None = None
+POWER_LIMIT_DISCOVERY_TOPIC = "homeassistant/number/huawei_solar/power_output_limit/config"
+
+
+def _subscribe_power_limit_commands(client: mqtt.Client) -> None:
+    if _power_limit_command_topic is None:
+        return
+    result, _ = client.subscribe(_power_limit_command_topic, qos=1)
+    if result != mqtt.MQTT_ERR_SUCCESS:
+        logger.error("❌ MQTT power limit subscription failed: %s", result)
+    else:
+        logger.info("✍️ Subscribed to inverter power limit commands: %s", _power_limit_command_topic)
+
+
+def _log_power_limit_command_result(future: Future[object]) -> None:
+    try:
+        future.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        logger.error(
+            "❌ Unexpected power limit command error: %s",
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
+
+def _on_message(client, userdata, message) -> None:
+    """Forward power limit commands from paho's thread to the asyncio loop."""
+    if message.topic != _power_limit_command_topic:
+        return
+    if message.retain:
+        logger.warning("Ignoring retained inverter power limit command")
+        return
+    if _power_limit_handler is None or _power_limit_event_loop is None:
+        return
+
+    try:
+        future: Future[object] = asyncio.run_coroutine_threadsafe(
+            _power_limit_handler(message.payload),
+            _power_limit_event_loop,
+        )
+        future.add_done_callback(_log_power_limit_command_result)
+    except RuntimeError as exc:
+        logger.error("❌ Cannot schedule inverter power limit command: %s", exc)
+
+
+def clear_power_limit_commands() -> None:
+    """Disable command handling, used during shutdown and test isolation."""
+    global _power_limit_handler, _power_limit_command_topic, _power_limit_event_loop
+    _power_limit_handler = None
+    _power_limit_command_topic = None
+    _power_limit_event_loop = None
+
+
+def subscribe_power_limit_commands(base_topic: str, handler: PowerLimitCommandHandler) -> None:
+    """Enable power limit commands and remember the subscription for reconnects."""
+    global _power_limit_handler, _power_limit_command_topic, _power_limit_event_loop
+    _power_limit_handler = handler
+    _power_limit_command_topic = f"{base_topic}/pmax/set"
+    _power_limit_event_loop = asyncio.get_running_loop()
+    _subscribe_power_limit_commands(_get_mqtt_client())
+
 
 def _on_connect(client, userdata, flags, rc, properties=None):
     """Callback when MQTT connection is established."""
@@ -45,6 +114,7 @@ def _on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         _is_connected = True
         _connected_event.set()
+        _subscribe_power_limit_commands(client)
     else:
         logger.error(f"❌ MQTT connection failed: {rc}")
 
@@ -68,6 +138,7 @@ def _get_mqtt_client() -> mqtt.Client:
 
     client.on_connect = _on_connect
     client.on_disconnect = _on_disconnect
+    client.on_message = _on_message
 
     user = os.environ.get("HUAWEI_MQTT_USER")
     password = os.environ.get("HUAWEI_MQTT_PASSWORD")
@@ -139,6 +210,7 @@ async def disconnect_mqtt() -> None:
     finally:
         _mqtt_client = None
         _is_connected = False
+        clear_power_limit_commands()
 
 
 def _build_sensor_config(sensor: dict[str, Any], base_topic: str, device_config: dict[str, Any]) -> dict[str, Any]:
@@ -198,6 +270,15 @@ async def _publish_sensor_configs(
     return count
 
 
+def _get_device_config() -> dict[str, Any]:
+    return {
+        "identifiers": ["huawei_solar_modbus"],
+        "name": "Huawei Solar Inverter",
+        "model": "SUN2000",
+        "manufacturer": "Huawei",
+    }
+
+
 async def publish_discovery_configs(base_topic: str) -> None:
     """Publish all MQTT Discovery configs (once at startup)."""
     if not _is_connected:
@@ -206,13 +287,7 @@ async def publish_discovery_configs(base_topic: str) -> None:
 
     logger.info("📊 Publishing MQTT Discovery")
     client = _get_mqtt_client()
-
-    device_config = {
-        "identifiers": ["huawei_solar_modbus"],
-        "name": "Huawei Solar Inverter",
-        "model": "SUN2000",
-        "manufacturer": "Huawei",
-    }
+    device_config = _get_device_config()
 
     sensors = _load_numeric_sensors()
     count = await _publish_sensor_configs(client, base_topic, sensors, device_config)
@@ -242,6 +317,50 @@ async def _publish_status_sensor(client: mqtt.Client, base_topic: str, device_co
         retain=True,
     )
     await _wait_for_publish(result, 1.0)
+
+
+async def publish_power_limit_discovery(base_topic: str, pmax: int) -> None:
+    """Publish the opt-in Home Assistant number for the persistent output cap."""
+    if not _is_connected:
+        raise ConnectionError("MQTT not connected")
+
+    config = {
+        "name": "PV Output Power Limit",
+        "unique_id": "huawei_solar_power_output_limit",
+        "state_topic": base_topic,
+        "value_template": "{{ value_json.power_output_limit }}",
+        "command_topic": f"{base_topic}/pmax/set",
+        "availability_topic": f"{base_topic}/status",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "min": 0,
+        "max": pmax,
+        "step": 1,
+        "mode": "box",
+        "unit_of_measurement": "W",
+        "device_class": "power",
+        "entity_category": "config",
+        "icon": "mdi:solar-power",
+        "optimistic": False,
+        "device": _get_device_config(),
+    }
+    result = _get_mqtt_client().publish(
+        POWER_LIMIT_DISCOVERY_TOPIC,
+        json.dumps(config),
+        qos=1,
+        retain=True,
+    )
+    await _wait_for_publish(result, 1.0)
+    logger.info("✍️ PV output power limit control published (0-%d W)", pmax)
+
+
+async def remove_power_limit_discovery() -> None:
+    """Remove a previously retained power limit control when writes are disabled."""
+    if not _is_connected:
+        return
+    result = _get_mqtt_client().publish(POWER_LIMIT_DISCOVERY_TOPIC, "", qos=1, retain=True)
+    await _wait_for_publish(result, 1.0)
+    logger.debug("PV output power limit control discovery removed")
 
 
 async def publish_data(data: dict[str, Any], topic: str) -> None:

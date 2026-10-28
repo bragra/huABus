@@ -90,6 +90,7 @@ INFO - 📊 Published - PV: 4500W | AC Out: 4200W | ...
   - Inverter-Status und Wirkungsgrad
 - **Konfigurierbares Logging** mit TRACE, DEBUG, INFO, WARNING, ERROR
 - **Performance-Monitoring** mit automatischen Warnungen
+- **Optionale PV-Ausgangsleistungsbegrenzung** über eine aktivierbare Home-Assistant-Zahlenentität
 
 ## Konfigurationsoptionen
 
@@ -120,6 +121,7 @@ INFO - 📊 Published - PV: 4500W | AC Out: 4200W | ...
 - **status_timeout** (Standard: `180s`, Range: 30-600): Offline-Timeout
 - **poll_interval** (Standard: `30s`, Range: 10-300): Abfrageintervall für Modbus
   - Empfohlen: **30-60s** für stabile Verbindungen
+- **enable_inverter_writes** (Standard: `false`): Aktiviert ausschließlich die persistente PV-Ausgangsleistungsbegrenzung. Nur aktivieren, wenn der Wechselrichter und die Modbus-Verbindung Schreibzugriffe unterstützen. Die Begrenzung nutzt Register 40126, wirkt sofort und bleibt über Inverter-Neustarts erhalten. Im nächtlichen Standby werden Schreibzugriffe abgelehnt; durch Setzen auf `P_MAX` wird die Begrenzung aufgehoben. Starte das Add-on nach einer Änderung neu.
 
 ### Batch-Konfiguration (Performance-Optimierung)
 
@@ -137,6 +139,7 @@ INFO - 📊 Published - PV: 4500W | AC Out: 4200W | ...
 
 - **Messdaten:** `huawei-solar` (JSON mit allen Sensordaten + Timestamp)
 - **Status:** `huawei-solar/status` (online/offline für Verfügbarkeit)
+- **Leistungsbegrenzungs-Befehl:** `huawei-solar/pmax/set` (ganzzahlige Watt; nur bei aktiviertem Schreibzugriff abonniert)
 
 ## Home Assistant Entitäten
 
@@ -175,6 +178,10 @@ Entitäten unter: **Einstellungen → Geräte & Dienste → MQTT → "Huawei Sol
 
 - `binary_sensor.huawei_solar_status` (online/offline)
 - `sensor.inverter_status`, `sensor.battery_status`
+
+**Optionale Steuerung (erfordert `enable_inverter_writes: true`):**
+
+- `number.pv_output_power_limit` (persistente Ausgangsleistungsbegrenzung, 0 W bis `P_MAX`)
 
 ### Diagnostik-Entitäten (standardmäßig deaktiviert)
 

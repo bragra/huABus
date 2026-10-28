@@ -17,7 +17,8 @@
 [![armv7](https://img.shields.io/badge/armv7-yes-green.svg)](https://github.com/arboeh/huABus)
 [![i386](https://img.shields.io/badge/i386-yes-green.svg)](https://github.com/arboeh/huABus)
 
-**66 essenzielle Register * 67 Entitäten * optionaler MQTT-Heartbeat * 30s Polling**  
+**67 essenzielle Register * 67 Sensor-Entitäten * optionale PV-Leistungsbegrenzung * 30s Polling**
+
 **Changelog:** [CHANGELOG.md](huawei_solar_modbus_mqtt/CHANGELOG.md)
 
 > **⚠️ WICHTIG: Nur EINE Modbus-Verbindung möglich**
@@ -30,7 +31,8 @@
 ## Features
 
 - **Automatische Slave ID-Erkennung:** Probiert automatisch gängige Werte (1, 2, 100)
-- **Modbus TCP → MQTT:** 67 Entitäten mit Auto-Discovery
+- **Modbus TCP → MQTT:** 67 Sensor-Entitäten mit Auto-Discovery
+- **Optionale Inverter-Steuerung:** Aktivierbare persistente PV-Ausgangsleistungsbegrenzung über Home Assistant
 - **Vollständiges Monitoring:** Batterie, PV (1-4), Netz (3-Phasen), Energie-Counter
 - **Total Increasing Filter:** Verhindert falsche Counter-Resets in Energie-Statistiken
 - **Auto MQTT-Konfiguration:** Nutzt automatisch Home Assistant MQTT-Zugangsdaten
@@ -56,7 +58,7 @@
 
 ## Batch-Lesemodus (v1.10.1+)
 
-Liest alle 66 Register in 3-5 Batches statt einzeln. **Performance-Verbesserung:** bis zu 75% schneller bei hoher Latenz. Automatisches Fallback zum sequenziellen Modus bei Fehlern.
+Liest alle 67 Register in 3-5 Batches statt einzeln. **Performance-Verbesserung:** bis zu 75% schneller bei hoher Latenz. Automatisches Fallback zum sequenziellen Modus bei Fehlern.
 
 **Konfiguration:**
 ```yaml
@@ -65,10 +67,26 @@ batch_max_gap: 50             # Max. Adresslücke pro Batch (Standard: 50, empfo
 ```
 
 **Details:**
-- `enable_batching: true` - Gruppiert Register intelligent nach Modbus-Adress-Nähe. Reduziert 66 einzelne Reads auf typisch 3-5 Batch-Anfragen.
+- `enable_batching: true` - Gruppiert Register intelligent nach Modbus-Adress-Nähe. Reduziert 67 einzelne Reads auf typisch 3-5 Batch-Anfragen.
 - `batch_max_gap: 50` - Maximale Adress-Lücke (in Modbus-Einheiten) innerhalb eines Batches. Kleinere Werte erzeugen mehr Batches mit weniger Risiko, das Inverter-Limit (~125 Register pro Batch) zu überschreiten. Größere Werte reduzieren die Batch-Anzahl, erhöhen aber das Risiko von Batch-Fehlern.
 - **Empfohlen:** `30-50` für die meisten Installationen. Nur bei stabilen, schnellen Netzwerken auf `100` erhöhen.
 - Deaktivieren (`enable_batching: false`), falls wiederholt Batch-Fehler auftreten.
+
+## Optionale PV-Ausgangsleistungsbegrenzung
+
+Der Schreibzugriff ist **standardmäßig deaktiviert**, da nicht alle Wechselrichter und Modbus-Verbindungen Register-Schreibzugriffe unterstützen. Aktiviere ausschließlich die persistente PV-Ausgangsleistungsbegrenzung mit:
+
+```yaml
+enable_inverter_writes: true
+```
+
+Nach einem Neustart des Add-ons stellt Home Assistant die Entität **PV Output Power Limit** (`number.pv_output_power_limit`) bereit. Gib einen Wert zwischen 0 W und dem `P_MAX` des Wechselrichters ein. Durch erneutes Setzen auf `P_MAX` wird die Begrenzung aufgehoben.
+
+- Nutzt die vorhandene Modbus-Verbindung und Register 40126 (`active_power_fixed_value_derating`).
+- Wirkt sofort und bleibt über Neustarts des Wechselrichters erhalten.
+- Der Wechselrichter lehnt Schreibzugriffe im nächtlichen Standby ab; wiederhole den Vorgang im On-grid-Betrieb.
+- Der angezeigte Wert wird vom Wechselrichter gelesen und beim Polling aktualisiert, nicht aus dem Befehl angenommen.
+- Deaktiviere `enable_inverter_writes` und starte neu, um die Steuerung und alle Befehlsabonnements zu entfernen.
 
 ## EVCC Integration (Kein Modbus Proxy!)
 
@@ -145,6 +163,7 @@ Beide teilen die gleiche Limitierung - nur **EINE Modbus-Verbindung**. Für glei
 - **Log-Level:** `TRACE` | `DEBUG` | `INFO` (empfohlen) | `WARNING` | `ERROR`
 - **Status Timeout:** Standard: `180s`
 - **Abfrageintervall:** Standard: `30s` (empfohlen: 30-60s)
+- **Inverter-Schreibzugriff aktivieren:** Standard: `false`; aktiviert nur die PV-Ausgangsleistungsbegrenzung
 
 ## Fehlerbehebung
 

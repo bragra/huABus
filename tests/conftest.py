@@ -50,6 +50,7 @@ def mock_config():
     config.status_timeout = 180
     config.enable_batching = True
     config.batch_max_gap = 50
+    config.enable_inverter_writes = False
     return config
 
 
